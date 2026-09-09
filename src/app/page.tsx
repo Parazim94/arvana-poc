@@ -43,6 +43,45 @@ export default function Home() {
     fetchCandidates();
   }, []);
 
+  // 1b. Realtime-Subscription: Änderungen an "candidates" sofort im UI reflektieren
+  useEffect(() => {
+    const channel = supabase
+      .channel('candidates-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'candidates' },
+        (payload) => {
+          setCandidates((current) => {
+            if (payload.eventType === 'INSERT') {
+              const row = payload.new as Candidate;
+              if (current.some((c) => c.id === row.id)) return current;
+              return [row, ...current].sort(
+                (a, b) =>
+                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              );
+            }
+
+            if (payload.eventType === 'UPDATE') {
+              const row = payload.new as Candidate;
+              return current.map((c) => (c.id === row.id ? row : c));
+            }
+
+            if (payload.eventType === 'DELETE') {
+              const oldRow = payload.old as Partial<Candidate>;
+              return current.filter((c) => c.id !== oldRow.id);
+            }
+
+            return current;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   // 2. Neuen Bewerber hinzufügen
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
